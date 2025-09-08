@@ -21,7 +21,7 @@ class WattageChecker:
     def setup_gui(self):
         """Initialize the GUI components."""
         self.root.title("Wattage Checker")
-        self.root.geometry("300x150")
+        self.root.geometry("280x120")
         self.root.resizable(False, False)
         
         # Center the window
@@ -35,16 +35,15 @@ class WattageChecker:
         # Dynamic display label (large, bold)
         display_font = font.Font(size=16, weight="bold")
         self.display_label = tk.Label(self.root, text="Checking...", font=display_font, fg="blue")
-        self.display_label.pack(pady=10)
+        self.display_label.pack(pady=15)
         
-        # Refresh button
-        button_font = font.Font(size=10)
-        self.refresh_button = tk.Button(self.root, text="Refresh", font=button_font, 
-                                       command=self.update_display, width=12)
-        self.refresh_button.pack(pady=10)
+        # Auto-update status label (small)
+        status_font = font.Font(size=9)
+        self.status_label = tk.Label(self.root, text="Updates every 3 seconds", font=status_font, fg="gray")
+        self.status_label.pack(pady=(5, 10))
         
-        # Initial update
-        self.root.after(500, self.update_display)
+        # Start auto-updates
+        self.auto_update()
     
     def get_wattage(self):
         """
@@ -107,26 +106,59 @@ class WattageChecker:
             
             output = result.stdout
             
-            # Parse voltage (in mV) and amperage (in mA)
+            # Check charging status first - this is the most reliable indicator
+            charging_current_match = re.search(r'"ChargingCurrent"\s*=\s*(\d+)', output)
+            
+            if charging_current_match:
+                charging_current = int(charging_current_match.group(1))
+                if charging_current == 0:
+                    # Not charging, device is on battery power
+                    return 0, "Discharging"
+            
+            # If we're charging, try to get direct wattage from adapter
+            adapter_watts_match = re.search(r'"Watts"\s*=\s*(\d+)', output)
+            
+            if adapter_watts_match and charging_current_match:
+                charging_current = int(charging_current_match.group(1))
+                if charging_current > 0:
+                    adapter_watts = int(adapter_watts_match.group(1))
+                    return adapter_watts, f"{adapter_watts:.1f} W"
+            
+            # Fallback: Parse voltage and amperage manually (for when ChargingCurrent > 0)
             voltage_match = re.search(r'"Voltage"\s*=\s*(\d+)', output)
-            amperage_match = re.search(r'"Amperage"\s*=\s*(-?\d+)', output)
+            amperage_match = re.search(r'"(?:Instant)?Amperage"\s*=\s*(\d+)', output)
             
             if not voltage_match or not amperage_match:
                 return 0, "Could not parse battery data"
             
-            voltage_mv = float(voltage_match.group(1))
-            amperage_ma = float(amperage_match.group(1))
+            voltage_mv = int(voltage_match.group(1))
+            amperage_raw = int(amperage_match.group(1))
+            
+            # Handle signed/unsigned conversion for amperage
+            # macOS reports negative values as large unsigned integers
+            if amperage_raw > 2**63:  # If it's a very large number, it's likely negative
+                amperage_ma = amperage_raw - 2**64  # Convert to signed
+            else:
+                amperage_ma = amperage_raw
             
             # Convert to watts: (mV / 1000) * (mA / 1000)
             voltage_v = voltage_mv / 1000
             amperage_a = amperage_ma / 1000
             
-            # Positive amperage = charging, negative = discharging
-            if amperage_a <= 0:
-                return 0, "Discharging"
-            
-            wattage = voltage_v * amperage_a
-            return wattage, f"{wattage:.1f} W"
+            # Only calculate wattage if we have positive charging current
+            if charging_current_match:
+                charging_current = int(charging_current_match.group(1))
+                if charging_current > 0:
+                    wattage = voltage_v * abs(amperage_a)  # Use absolute value for calculation
+                    return wattage, f"{wattage:.1f} W"
+                else:
+                    return 0, "Discharging"
+            else:
+                # Fallback if no ChargingCurrent field found
+                if amperage_a <= 0:
+                    return 0, "Discharging"
+                wattage = voltage_v * abs(amperage_a)
+                return wattage, f"{wattage:.1f} W"
             
         except subprocess.TimeoutExpired:
             return 0, "Command timeout"
@@ -210,11 +242,9 @@ class WattageChecker:
         except Exception as e:
             return 0, f"Unexpected error: {str(e)}"
     
-    def update_display(self):
-        """Update the display with current wattage reading."""
-        self.display_label.config(text="Checking...", fg="blue")
-        self.root.update()
-        
+    def auto_update(self):
+        """Automatically update the display every 3 seconds."""
+        # Get current wattage
         wattage, display_text = self.get_wattage()
         
         # Set color based on result
@@ -225,7 +255,11 @@ class WattageChecker:
         else:
             color = "green"
         
+        # Update display
         self.display_label.config(text=display_text, fg=color)
+        
+        # Schedule next update in 3 seconds (3000 milliseconds)
+        self.root.after(3000, self.auto_update)
     
     def run(self):
         """Start the application."""
