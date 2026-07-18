@@ -1,27 +1,3 @@
-# Build artifacts
-build/
-*.spec
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-
-# macOS system files
+target/
+Watts.app/
 .DS_Store
-.DS_Store?
-
-# Virtual environments
-venv/
-env/
-
-# IDE files
-.vscode/
-.idea/
-
-# Temporary files
-*.tmp
-*.log
-
-# Keep dist/ for ready-to-use packages
-# dist/ files are intentionally included for user downloads

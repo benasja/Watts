@@ -1,0 +1,18 @@
+[package]
+name = "watts"
+version = "1.0.0"
+edition = "2021"
+description = "Live charging/discharging wattage in your macOS menu bar"
+license = "MIT"
+
+[dependencies]
+tao = "0.30"
+tray-icon = "0.19"
+plist = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
